@@ -44,33 +44,12 @@ void welcome();
 void addPacket(uint32_t, char *);
 struct PacketHolder * findPacket (uint32_t);
 void deletePacket (struct PacketHolder *);
+void parseInput(int, char **);
 
 int main(int argc, char * argv[]) {
   FILE *fp;
 
-  // parse command line arguments	
-  for (int i = 1; i < argc; i++) {
-    // make sure the first argument is -level 
-    if (!strcmp(argv[i], "-level")) {
-      if (i == (argc - 1)) {
-        usage();
-        return 1;
-      }
-      i++;
-      level = atoi(argv[i]);
-    } else if (!strcmp(argv[i], "-threads")) { // make sure a number of threads is specified 
-      if (i == (argc - 1)) {
-        usage();
-        return 1;
-      }
-      i++;
-      threads = atoi(argv[i]);
-    } else { // all inputs specified 
-      strcpy(filelist[numfiles], argv[i]);
-      numfiles++;
-    }
-  }
-  welcome();
+  parseInput(argc, argv);
 
   //open the file for reading
   fp = fopen("Dataset-Small.pcap", "r");
@@ -79,6 +58,43 @@ int main(int argc, char * argv[]) {
   fclose(fp);
 
   return 0;
+}
+
+void parseInput(int argc, char * argv[]) {
+  // parse command line arguments	
+  for (int i = 1; i < argc; i++) {
+    // make sure the first argument is -level 
+    if (!strcmp(argv[i], "-level")) {
+      if (i == (argc - 1)) {
+        usage();
+        exit( EXIT_FAILURE );
+      }
+      i++;
+      if ((atoi(argv[i]) != 1) && (atoi(argv[i]) != 2)) {
+        usage();
+        exit( EXIT_FAILURE );
+      } else {
+        level = atoi(argv[i]);
+      }
+    } else if (!strcmp(argv[i], "-threads")) { // make sure a number of threads is specified 
+      if (i == (argc - 1)) {
+        usage();
+        exit( EXIT_FAILURE );
+      }
+      i++;
+      if ((atoi(argv[i]) <= 0) || (atoi(argv[i]) > 25)) {
+        usage();
+        exit( EXIT_FAILURE );
+      } else {
+        threads = atoi(argv[i]);
+      }
+    } else { // all inputs specified 
+      strcpy(filelist[numfiles], argv[i]);
+      numfiles++;
+    }
+  }
+  welcome();
+  return;
 }
 
 // startup function
@@ -130,17 +146,17 @@ void DumpInformation (FILE *fp) {
 
     //ignore packets less than 128 bytes
     if (nPacketLength < 128) {
-      printf("skipped: too small\n");	
+      //printf("skipped: too small\n");	
       fseek(fp, nPacketLength, SEEK_CUR);
 
     }
     // ignore packets greater than 2400 bytes 
     else if (nPacketLength > 2400) {
-      printf("skipped: too large");
+      //printf("skipped: too large");
       fseek(fp, nPacketLength, SEEK_CUR);
     }
     else {
-      printf("Packet length was %d\n", nPacketLength);
+     //printf("Packet length was %d\n", nPacketLength);
       //store in a data structure somehow
 
       //skip the first 52 bytes
@@ -185,3 +201,5 @@ void deletePacket (struct PacketHolder *packet) {
   HASH_DEL(packets, packet);  // packet: pointer to delete
   free(packet);
 }
+
+
