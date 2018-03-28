@@ -15,11 +15,6 @@ int threads = DEF_THREADS;
 char filelist[MAX_FILES][MAX_FILENAME_LENGTH + 1];
 int numfiles = 0;
 
-void DumpInformation (FILE *);
-void parseHeader(FILE *);
-void usage();
-void welcome();
-
 // struct to hold previously seen packet contents
 // this is what we should probably store in a linked 
 // list that's attaached to the hash table
@@ -38,6 +33,11 @@ struct PacketHolder *packets = NULL;
 
 
 
+void DumpInformation (FILE *);
+void parseHeader(FILE *);
+void usage();
+void welcome();
+void addPacket(uint32_t, char *);
 
 int main(int argc, char * argv[]) {
   FILE *fp;
@@ -154,4 +154,16 @@ void DumpInformation (FILE *fp) {
 		}	
 		//after these loops, start reading the next packet
 	}
+}
+
+
+void addPacket(uint32_t hash, char * data) {
+  struct PacketHolder * s;
+  HASH_FIND_INT(packets, &hash, s); // is the packet already in table
+  if (s == NULL) {
+    s = (struct PacketHolder *)malloc(sizeof(struct PacketHolder));
+    s->hash = hash;
+    HASH_ADD_INT(packets, hash, s);
+  }
+  strcpy(s->data, data); 
 }
