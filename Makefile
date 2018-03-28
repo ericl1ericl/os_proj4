@@ -1,6 +1,6 @@
 all: threadedRE
 C=/afs/nd.edu/user14/csesoft/new/bin/gcc
-CFLAGS=-std=c99 -Wall
+CFLAGS=-std=gnu99 -Wall
 LD=/afs/nd.edu/user14/csesoft/new/bin/gcc
 LDFLAGS=
 

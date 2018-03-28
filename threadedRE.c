@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include "hash.c"
 #include "uthash.h"
+#include <pthread.h>
 
 #define DEF_LEVEL 1
 #define DEF_THREADS 1
@@ -18,6 +19,8 @@ int level = DEF_LEVEL;
 int threads = DEF_THREADS;
 char filelist[MAX_FILES][MAX_FILENAME_LENGTH + 1];
 int numfiles = 0;
+
+pthread_rwlock_t hashLock = PTHREAD_RWLOCK_INITIALIZER;
 
 // struct to hold previously seen packet contents
 // this is what we should probably store in a linked 
@@ -44,6 +47,9 @@ void welcome();
 void addPacket(uint32_t, char *);
 struct PacketHolder * findPacket (uint32_t);
 void deletePacket (struct PacketHolder *);
+void DONTCALLTHISaddPacket(uint32_t, char *);
+struct PacketHolder * DONTCALLTHISfindPacket (uint32_t);
+void DONTCALLTHISdeletePacket (struct PacketHolder *);
 void parseInput(int, char **);
 void printPackets();
 
@@ -185,6 +191,24 @@ void DumpInformation (FILE *fp) {
 
 
 void addPacket(uint32_t hash, char * data) {
+  pthread_rwlock_wrlock(&hashLock);
+  DONTCALLTHISaddPacket(hash, data);
+  pthread_rwlock_unlock(&hashLock);
+}
+
+struct PacketHolder * findPacket (uint32_t hash) {
+  pthread_rwlock_rdlock(&hashLock);
+  DONTCALLTHISfindPacket(hash);
+  pthread_rwlock_unlock(&hashLock);
+}
+
+void deletePacket (struct PacketHolder *packet) {
+  pthread_rwlock_wrlock(&hashLock);
+  DONTCALLTHISdeletePacket(packet);
+  pthread_rwlock_unlock(&hashLock);
+}
+
+void DONTCALLTHISaddPacket(uint32_t hash, char * data) {
   struct PacketHolder * s;
   HASH_FIND_INT(packets, &hash, s); // is the packet already in table
   if (s == NULL) {
@@ -195,14 +219,14 @@ void addPacket(uint32_t hash, char * data) {
   strcpy(s->data, data); 
 }
 
-struct PacketHolder * findPacket (uint32_t hash) {
+struct PacketHolder * DONTCALLTHISfindPacket (uint32_t hash) {
   struct PacketHolder *s;
 
   HASH_FIND_INT(packets, &hash, s);  // s: output pointer
   return s;
 }
 
-void deletePacket (struct PacketHolder *packet) {
+void DONTCALLTHISdeletePacket (struct PacketHolder *packet) {
   HASH_DEL(packets, packet);  // packet: pointer to delete
   free(packet);
 }
