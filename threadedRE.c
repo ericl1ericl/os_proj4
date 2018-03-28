@@ -25,7 +25,7 @@ int numfiles = 0;
 
 struct PacketHolder{
   int isValid; // 0 if no, 1 if yest
-  char data[2400]; // the actual packet data
+  char data[2000]; // the actual packet data
   uint32_t hash; // hash of th packet contents
   UT_hash_handle hh;
 };
@@ -45,6 +45,7 @@ void addPacket(uint32_t, char *);
 struct PacketHolder * findPacket (uint32_t);
 void deletePacket (struct PacketHolder *);
 void parseInput(int, char **);
+void printPackets();
 
 int main(int argc, char * argv[]) {
   FILE *fp;
@@ -56,6 +57,8 @@ int main(int argc, char * argv[]) {
   parseHeader(fp);	
   DumpInformation(fp);
   fclose(fp);
+
+  //printPackets();
 
   return 0;
 }
@@ -156,7 +159,7 @@ void DumpInformation (FILE *fp) {
       fseek(fp, nPacketLength, SEEK_CUR);
     }
     else {
-     //printf("Packet length was %d\n", nPacketLength);
+      //printf("Packet length was %d\n", nPacketLength);
       //store in a data structure somehow
 
       //skip the first 52 bytes
@@ -171,8 +174,10 @@ void DumpInformation (FILE *fp) {
       //compute the hash for theData -- 52 bytes through the end of the packet 
       uint32_t b = 0, c = 0;
       hashlittle2(compHash, sizeof(theData), &b, &c);
-      // make a packet struct
-
+      // add packet to hash table
+      //printf("adding data of size: %lu at primary hash: %d\n", sizeof(compHash), b);
+      addPacket(b, &compHash[0]);
+       
     }	
     //after these loops, start reading the next packet
   }
@@ -202,4 +207,11 @@ void deletePacket (struct PacketHolder *packet) {
   free(packet);
 }
 
+void printPackets() {
+  struct PacketHolder *s;
+
+  for(s = packets; s != NULL; s=(struct PacketHolder *)(s->hh.next)) {
+    printf("hash %d: data size %ld\n", s->hash, sizeof(s->data));
+  }
+}
 
