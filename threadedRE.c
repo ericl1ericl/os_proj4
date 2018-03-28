@@ -9,6 +9,7 @@
 #include "hash.c"
 #include "uthash.h"
 #include <pthread.h>
+#include <unistd.h>
 
 #define DEF_LEVEL 1
 #define DEF_THREADS 1
@@ -27,11 +28,19 @@ pthread_rwlock_t hashLock = PTHREAD_RWLOCK_INITIALIZER;
 // list that's attaached to the hash table
 
 struct PacketHolder{
-  int isValid; // 0 if no, 1 if yest
-  char data[2000]; // the actual packet data
-  uint32_t hash; // hash of th packet contents
-  UT_hash_handle hh;
+	int isValid; // 0 if no, 1 if yest
+	char data[2000]; // the actual packet data
+	uint32_t hash; // hash of th packet contents
+	UT_hash_handle hh;
 };
+
+typedef struct {
+	char buf[BUFSIZ];
+	size_t len;
+	pthread_mutex_t mutex;
+	pthread_cond_t more;
+	pthread_cond_t less;
+} buffer_t;
 
 // hold all the packets
 struct PacketHolder *packets = NULL;
@@ -52,141 +61,193 @@ struct PacketHolder * DONTCALLTHISfindPacket (uint32_t);
 void DONTCALLTHISdeletePacket (struct PacketHolder *);
 void parseInput(int, char **);
 void printPackets();
+void *producer(void *);
+void *consumer(void *);
+
 
 int main(int argc, char * argv[]) {
-  FILE *fp;
+	FILE *fp;
 
-  parseInput(argc, argv);
+	parseInput(argc, argv);
 
-  //open the file for reading
-  fp = fopen("Dataset-Small.pcap", "r");
-  parseHeader(fp);	
-  DumpInformation(fp);
-  fclose(fp);
+	//open the file for reading
+	fp = fopen("Dataset-Small.pcap", "r");
+	parseHeader(fp);	
+	DumpInformation(fp);
+	fclose(fp);
 
-  //printPackets();
+	buffer_t buffer = {
+		.len = 0,
+		.mutex = PTHREAD_MUTEX_INITIALIZER,
+		.more = PTHREAD_COND_INITIALIZER,
+		.less = PTHREAD_COND_INITIALIZER
+	};
 
-  return 0;
+	pthread_t prod;
+	pthread_t cons;
+	pthread_create(&prod, NULL, producer, (void*)&buffer);
+	pthread_create(&cons, NULL, consumer, (void*)&buffer);
+
+	pthread_join(prod, NULL);
+	pthread_join(cons, NULL);
+
+	//printPackets();
+
+	return 0;
 }
 
 void parseInput(int argc, char * argv[]) {
-  // parse command line arguments	
-  for (int i = 1; i < argc; i++) {
-    // make sure the first argument is -level 
-    if (!strcmp(argv[i], "-level")) {
-      if (i == (argc - 1)) {
-        usage();
-        exit( EXIT_FAILURE );
-      }
-      i++;
-      if ((atoi(argv[i]) != 1) && (atoi(argv[i]) != 2)) {
-        usage();
-        exit( EXIT_FAILURE );
-      } else {
-        level = atoi(argv[i]);
-      }
-    } else if (!strcmp(argv[i], "-threads")) { // make sure a number of threads is specified 
-      if (i == (argc - 1)) {
-        usage();
-        exit( EXIT_FAILURE );
-      }
-      i++;
-      if ((atoi(argv[i]) <= 0) || (atoi(argv[i]) > 25)) {
-        usage();
-        exit( EXIT_FAILURE );
-      } else {
-        threads = atoi(argv[i]);
-      }
-    } else { // all inputs specified 
-      strcpy(filelist[numfiles], argv[i]);
-      numfiles++;
-    }
-  }
-  welcome();
-  return;
+	// parse command line arguments	
+	for (int i = 1; i < argc; i++) {
+		// make sure the first argument is -level 
+		if (!strcmp(argv[i], "-level")) {
+			if (i == (argc - 1)) {
+				usage();
+				exit( EXIT_FAILURE );
+			}
+			i++;
+			if ((atoi(argv[i]) != 1) && (atoi(argv[i]) != 2)) {
+				usage();
+				exit( EXIT_FAILURE );
+			} else {
+				level = atoi(argv[i]);
+			}
+		} else if (!strcmp(argv[i], "-threads")) { // make sure a number of threads is specified 
+			if (i == (argc - 1)) {
+				usage();
+				exit( EXIT_FAILURE );
+			}
+			i++;
+			if ((atoi(argv[i]) <= 0) || (atoi(argv[i]) > 25)) {
+				usage();
+				exit( EXIT_FAILURE );
+			} else {
+				threads = atoi(argv[i]);
+			}
+		} else { // all inputs specified 
+			strcpy(filelist[numfiles], argv[i]);
+			numfiles++;
+		}
+	}
+	welcome();
+	return;
 }
 
 // startup function
 void welcome() {
-  printf("Welcome to Project 4 - threadedRE by kage\n");
-  printf("level: %d\n", level);
-  printf("threads: %d\n", threads);
-  printf("files: ");
-  for (int i = 0; i < numfiles; i++) {
-    printf("%s ", filelist[i]);
-  }
-  printf("\n");
-  return; 
+	printf("Welcome to Project 4 - threadedRE by kage\n");
+	printf("level: %d\n", level);
+	printf("threads: %d\n", threads);
+	printf("files: ");
+	for (int i = 0; i < numfiles; i++) {
+		printf("%s ", filelist[i]);
+	}
+	printf("\n");
+	return; 
 }
 
 void usage() {
-  printf("usage: threadedRE [-level l] [-threads t] file1 [file2 ...]\n");
-  printf("\t-level l: version of program to run (default 1)\n");
-  printf("\t-threads t: max number of threads allowed (default 1)\n");
-  printf("\t-file1 ... : list of .pcap files to process\n");
-  return;
+	printf("usage: threadedRE [-level l] [-threads t] file1 [file2 ...]\n");
+	printf("\t-level l: version of program to run (default 1)\n");
+	printf("\t-threads t: max number of threads allowed (default 1)\n");
+	printf("\t-file1 ... : list of .pcap files to process\n");
+	return;
 }
 
 void parseHeader(FILE *fp) {
-  //jump through 24 bytes of the header of the pcap file
-  fseek(fp, 24, SEEK_CUR);
-  printf("jumped through the header\n");
+	//jump through 24 bytes of the header of the pcap file
+	fseek(fp, 24, SEEK_CUR);
+	printf("jumped through the header\n");
+}
+
+void *producer(void *arg) {
+	buffer_t *buffer = (buffer_t*) arg;
+	while (1) {
+		pthread_mutex_lock(&buffer->mutex);
+		if(buffer->len == BUFSIZ) {
+			pthread_cond_wait(&buffer->more, &buffer->mutex);
+		}
+		int t = rand();
+		printf("Produced: %d\n", t);
+		buffer->buf[buffer->len] = t;
+		++buffer->len;
+		pthread_cond_signal(&buffer->less);
+		pthread_mutex_unlock(&buffer->mutex);
+	}
+	return NULL;
+}
+
+void *consumer(void *arg) {
+	buffer_t *buffer = (buffer_t*) arg;
+	while(1) {
+		pthread_mutex_lock(&buffer->mutex);
+		while(buffer->len == 0) {
+			pthread_cond_wait(&buffer->less, &buffer->mutex);
+		}
+		--buffer->len;
+		printf("Consumed: %d\n", buffer->buf[buffer->len]);
+		pthread_cond_signal(&buffer->more);
+		pthread_mutex_unlock(&buffer->mutex);
+	}
+	return NULL;
 }
 
 //fread(pointer to memory, size of element to be read, number of elements, 
 //	the pointer to a FILE object)
 void DumpInformation (FILE *fp) {
-  uint32_t nPacketLength;
-  uint32_t newPacketLength = 0;
-  char theData[2000];
+	uint32_t nPacketLength;
+	uint32_t newPacketLength = 0;
+	char theData[2000];
 
-  while(!feof(fp)) {
-    //skip the ts_sec field
-    fseek(fp, 4, SEEK_CUR);
+	while(!feof(fp)) {
+		//skip the ts_sec field
+		fseek(fp, 4, SEEK_CUR);
 
-    //skip the ts_usec field
-    fseek(fp, 4, SEEK_CUR);
+		//skip the ts_usec field
+		fseek(fp, 4, SEEK_CUR);
 
-    //Read the incl_len field --> store in nPacketLength
-    fread(&nPacketLength, 4, 1, fp);
+		//Read the incl_len field --> store in nPacketLength
+		fread(&nPacketLength, 4, 1, fp);
 
-    //Skip the orig_len field
-    fseek(fp, 4, SEEK_CUR);
+		//Skip the orig_len field
+		fseek(fp, 4, SEEK_CUR);
 
-    //ignore packets less than 128 bytes
-    if (nPacketLength < 128) {
-      //printf("skipped: too small\n");	
-      fseek(fp, nPacketLength, SEEK_CUR);
+		//ignore packets less than 128 bytes
+		if (nPacketLength < 128) {
+			//printf("skipped: too small\n");	
+			fseek(fp, nPacketLength, SEEK_CUR);
 
-    }
-    // ignore packets greater than 2400 bytes 
-    else if (nPacketLength > 2400) {
-      //printf("skipped: too large");
-      fseek(fp, nPacketLength, SEEK_CUR);
-    }
-    else {
-      //printf("Packet length was %d\n", nPacketLength);
-      //store in a data structure somehow
+		}
+		// ignore packets greater than 2400 bytes 
+		else if (nPacketLength > 2400) {
+			//printf("skipped: too large");
+			fseek(fp, nPacketLength, SEEK_CUR);
+		}
+		else {
+			//printf("Packet length was %d\n", nPacketLength);
+			//store in a data structure somehow
 
-      //skip the first 52 bytes
-      fseek(fp, 52, SEEK_CUR);
+			//skip the first 52 bytes
+			fseek(fp, 52, SEEK_CUR);
 
-      //store the rest of the packet into theData
-      newPacketLength = nPacketLength - 52;
-      fread(theData, 1, newPacketLength, fp);
-      // make a copy of theData
-      char compHash[2000];
-      strncpy(compHash, theData, sizeof(theData));
-      //compute the hash for theData -- 52 bytes through the end of the packet 
-      uint32_t b = 0, c = 0;
-      hashlittle2(compHash, sizeof(theData), &b, &c);
-      // add packet to hash table
-      //printf("adding data of size: %lu at primary hash: %d\n", sizeof(compHash), b);
-      addPacket(b, &compHash[0]);
-       
-    }	
-    //after these loops, start reading the next packet
-  }
+			//store the rest of the packet into theData
+			newPacketLength = nPacketLength - 52;
+			fread(theData, 1, newPacketLength, fp);
+
+			// TODO: make new fcn
+			// make a copy of theData
+			char compHash[2000];
+			strncpy(compHash, theData, sizeof(theData));
+			//compute the hash for theData -- 52 bytes through the end of the packet 
+			uint32_t b = 0, c = 0;
+			hashlittle2(compHash, sizeof(theData), &b, &c);
+			// add packet to hash table
+			//printf("adding data of size: %lu at primary hash: %d\n", sizeof(compHash), b);
+			addPacket(b, &compHash[0]);
+
+		}	
+		//after these loops, start reading the next packet
+	}
 }
 
 
@@ -221,9 +282,8 @@ void DONTCALLTHISaddPacket(uint32_t hash, char * data) {
 
 struct PacketHolder * DONTCALLTHISfindPacket (uint32_t hash) {
   struct PacketHolder *s;
-
-  HASH_FIND_INT(packets, &hash, s);  // s: output pointer
-  return s;
+	HASH_FIND_INT(packets, &hash, s);  // s: output pointer
+	return s;
 }
 
 void DONTCALLTHISdeletePacket (struct PacketHolder *packet) {
@@ -232,10 +292,10 @@ void DONTCALLTHISdeletePacket (struct PacketHolder *packet) {
 }
 
 void printPackets() {
-  struct PacketHolder *s;
+	struct PacketHolder *s;
 
-  for(s = packets; s != NULL; s=(struct PacketHolder *)(s->hh.next)) {
-    printf("hash %d: data size %ld\n", s->hash, sizeof(s->data));
-  }
+	for(s = packets; s != NULL; s=(struct PacketHolder *)(s->hh.next)) {
+		printf("hash %d: data size %ld\n", s->hash, sizeof(s->data));
+	}
 }
 
