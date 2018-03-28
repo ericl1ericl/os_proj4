@@ -21,6 +21,8 @@ int threads = DEF_THREADS;
 char filelist[MAX_FILES][MAX_FILENAME_LENGTH + 1];
 int numfiles = 0;
 
+pthread_rwlock_t hashLock = PTHREAD_RWLOCK_INITIALIZER;
+
 // struct to hold previously seen packet contents
 // this is what we should probably store in a linked 
 // list that's attaached to the hash table
@@ -54,6 +56,9 @@ void welcome();
 void addPacket(uint32_t, char *);
 struct PacketHolder * findPacket (uint32_t);
 void deletePacket (struct PacketHolder *);
+void DONTCALLTHISaddPacket(uint32_t, char *);
+struct PacketHolder * DONTCALLTHISfindPacket (uint32_t);
+void DONTCALLTHISdeletePacket (struct PacketHolder *);
 void parseInput(int, char **);
 void printPackets();
 void *producer(void *);
@@ -62,8 +67,6 @@ void *consumer(void *);
 
 int main(int argc, char * argv[]) {
 	FILE *fp;
-
-
 
 	parseInput(argc, argv);
 
@@ -249,26 +252,43 @@ void DumpInformation (FILE *fp) {
 
 
 void addPacket(uint32_t hash, char * data) {
-	struct PacketHolder * s;
-	HASH_FIND_INT(packets, &hash, s); // is the packet already in table
-	if (s == NULL) {
-		s = (struct PacketHolder *)malloc(sizeof(struct PacketHolder));
-		s->hash = hash;
-		HASH_ADD_INT(packets, hash, s);
-	}
-	strcpy(s->data, data); 
+  pthread_rwlock_wrlock(&hashLock);
+  DONTCALLTHISaddPacket(hash, data);
+  pthread_rwlock_unlock(&hashLock);
 }
 
 struct PacketHolder * findPacket (uint32_t hash) {
-	struct PacketHolder *s;
+  pthread_rwlock_rdlock(&hashLock);
+  DONTCALLTHISfindPacket(hash);
+  pthread_rwlock_unlock(&hashLock);
+}
 
+void deletePacket (struct PacketHolder *packet) {
+  pthread_rwlock_wrlock(&hashLock);
+  DONTCALLTHISdeletePacket(packet);
+  pthread_rwlock_unlock(&hashLock);
+}
+
+void DONTCALLTHISaddPacket(uint32_t hash, char * data) {
+  struct PacketHolder * s;
+  HASH_FIND_INT(packets, &hash, s); // is the packet already in table
+  if (s == NULL) {
+    s = (struct PacketHolder *)malloc(sizeof(struct PacketHolder));
+    s->hash = hash;
+    HASH_ADD_INT(packets, hash, s);
+  }
+  strcpy(s->data, data); 
+}
+
+struct PacketHolder * DONTCALLTHISfindPacket (uint32_t hash) {
+  struct PacketHolder *s;
 	HASH_FIND_INT(packets, &hash, s);  // s: output pointer
 	return s;
 }
 
-void deletePacket (struct PacketHolder *packet) {
-	HASH_DEL(packets, packet);  // packet: pointer to delete
-	free(packet);
+void DONTCALLTHISdeletePacket (struct PacketHolder *packet) {
+  HASH_DEL(packets, packet);  // packet: pointer to delete
+  free(packet);
 }
 
 void printPackets() {
