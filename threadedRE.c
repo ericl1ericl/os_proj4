@@ -101,6 +101,7 @@ int main(int argc, char * argv[]) {
 	pthread_create(&prod, NULL, producer, buffer);
 	pthread_create(&cons, NULL, consumer, buffer);
 
+	printf("return to main\n");
 	pthread_join(prod, NULL);
 	pthread_join(cons, NULL);
 
@@ -198,14 +199,15 @@ void *producer(void *arg) {
 
 void *consumer(void *arg) {
 	buffer_t *buffer = (buffer_t*) arg;
-	while(1) {
+	while(buffer->len != BUFSIZ) {
 		pthread_mutex_lock(buffer->mutex);
-		while(buffer->len == 0) {
+		if(buffer->len <= 0) {
 			pthread_cond_wait(buffer->less, buffer->mutex);
 		}
+		//else {
 		compHash();
 		--buffer->len;
-		printf("Consumed: %d\n", buffer->buf[buffer->len]);
+		printf("Consumed: %d, l: %i\n", buffer->buf[buffer->len], (int)buffer->len);
 		pthread_cond_signal(buffer->more);
 		pthread_mutex_unlock(buffer->mutex);
 	}
@@ -258,18 +260,18 @@ void DumpInformation (void *arg) {
 			newPacketLength = nPacketLength - 52;
 			fread(theData, 1, newPacketLength, fp);
 		}
-		// TODO: add data to the queue
-		while (1) {
+		// add data to the queue
+		//while (1) {
 			pthread_mutex_lock(buffer->mutex);
-			if(buffer->len == BUFSIZ) {
+			while(buffer->len >= BUFSIZ) { //if
 				pthread_cond_wait(buffer->more, buffer->mutex);
 			}
 			strcpy(buffer->buf, theData);
 			++buffer->len;
-			printf("Produced: %d\n", buffer->buf[buffer->len]);
+			printf("Produced: %d, l: %i\n", buffer->buf[buffer->len], (int)buffer->len);
 			pthread_cond_signal(buffer->less);
 			pthread_mutex_unlock(buffer->mutex);
-		}	
+		//}	
 	}
 }
 
@@ -286,6 +288,11 @@ void compHash(){
 
 	// add packet to hash table
 	addPacket(b, &compHash[0]);
+
+	//TODO: add redundancy checking here?
+	// Linear search from 0 to N-1
+	// or modulus: b%2000?
+	
 }
 
 void chooseHashToEvict(uint32_t hash) {
