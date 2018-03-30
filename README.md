@@ -9,5 +9,5 @@ Strategy for threading:
 Strategy for cache eviction: 
 
 Performance numbers for Level 1: 
-
+d
 Performance numbers for Level 2:
