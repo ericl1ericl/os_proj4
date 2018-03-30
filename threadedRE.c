@@ -16,7 +16,7 @@
 #define MAX_FILES 10
 #define MAX_FILENAME_LENGTH 30
 #define RAND_SEED 10
-#define MAX_PACKETS_IN_TABLE 100 // TODO CHANGE THIS NUMBER BEFORE TURNING IN
+#define MAX_PACKETS_IN_TABLE 32000 // TODO CHANGE THIS NUMBER BEFORE TURNING IN
 
 
 // global variables
@@ -263,7 +263,7 @@ void compHash(){
 }
 
 void chooseHashToEvict(uint32_t hash) {
-  int roll = rand() % 6 + 1;
+  int roll = rand() % 6;
   if (!packetsInTable) { // if this is the first entry, it is automatically the packet that will be evicted
     hashToEvict = hash;
   } else if (!roll) { // if roll == 0 (1/6 chance) update packet to evict
