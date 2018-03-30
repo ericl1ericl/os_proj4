@@ -16,16 +16,15 @@
 #define MAX_FILES 10
 #define MAX_FILENAME_LENGTH 30
 
+// global variables
 int level = DEF_LEVEL;
 int threads = DEF_THREADS;
 char filelist[MAX_FILES][MAX_FILENAME_LENGTH + 1];
 int numfiles = 0;
+struct PacketHolder *packets = NULL;
+char theData[2000];
 
 pthread_rwlock_t hashLock = PTHREAD_RWLOCK_INITIALIZER;
-
-// struct to hold previously seen packet contents
-// this is what we should probably store in a linked 
-// list that's attaached to the hash table
 
 struct PacketHolder{
 	int isValid; // 0 if no, 1 if yest
@@ -34,6 +33,7 @@ struct PacketHolder{
 	UT_hash_handle hh;
 };
 
+// buffer/queue struct
 typedef struct {
 	char buf[BUFSIZ];
 	size_t len;
@@ -42,13 +42,8 @@ typedef struct {
 	pthread_cond_t less;
 } buffer_t;
 
-// hold all the packets
-struct PacketHolder *packets = NULL;
 
-//hash table with chaining
-
-
-
+// function definitions 
 void DumpInformation (FILE *);
 void parseHeader(FILE *);
 void usage();
@@ -63,7 +58,7 @@ void parseInput(int, char **);
 void printPackets();
 void *producer(void *);
 void *consumer(void *);
-
+void compHash();
 
 int main(int argc, char * argv[]) {
 	FILE *fp;
@@ -192,12 +187,12 @@ void *consumer(void *arg) {
 	return NULL;
 }
 
+
 //fread(pointer to memory, size of element to be read, number of elements, 
 //	the pointer to a FILE object)
 void DumpInformation (FILE *fp) {
 	uint32_t nPacketLength;
 	uint32_t newPacketLength = 0;
-	char theData[2000];
 
 	while(!feof(fp)) {
 		//skip the ts_sec field
@@ -216,7 +211,6 @@ void DumpInformation (FILE *fp) {
 		if (nPacketLength < 128) {
 			//printf("skipped: too small\n");	
 			fseek(fp, nPacketLength, SEEK_CUR);
-
 		}
 		// ignore packets greater than 2400 bytes 
 		else if (nPacketLength > 2400) {
@@ -233,21 +227,24 @@ void DumpInformation (FILE *fp) {
 			//store the rest of the packet into theData
 			newPacketLength = nPacketLength - 52;
 			fread(theData, 1, newPacketLength, fp);
-
-			// TODO: make new fcn
-			// make a copy of theData
-			char compHash[2000];
-			strncpy(compHash, theData, sizeof(theData));
-			//compute the hash for theData -- 52 bytes through the end of the packet 
-			uint32_t b = 0, c = 0;
-			hashlittle2(compHash, sizeof(theData), &b, &c);
-			// add packet to hash table
-			//printf("adding data of size: %lu at primary hash: %d\n", sizeof(compHash), b);
-			addPacket(b, &compHash[0]);
-
-		}	
-		//after these loops, start reading the next packet
+		}
+		// TODO: add data to the queue
 	}
+}
+
+// consumers start here 
+// TODO: need to add a function that checks for redundancy
+void compHash(){
+	// make a copy of theData
+	char compHash[2000];
+	strncpy(compHash, theData, sizeof(theData));
+
+	//compute the hash for theData -- 52 bytes through the end of the packet 
+	uint32_t b = 0, c = 0;
+	hashlittle2(compHash, sizeof(theData), &b, &c);
+
+	// add packet to hash table
+	addPacket(b, &compHash[0]);
 }
 
 
@@ -259,8 +256,9 @@ void addPacket(uint32_t hash, char * data) {
 
 struct PacketHolder * findPacket (uint32_t hash) {
   pthread_rwlock_rdlock(&hashLock);
-  DONTCALLTHISfindPacket(hash);
+  struct PacketHolder * s = DONTCALLTHISfindPacket(hash);
   pthread_rwlock_unlock(&hashLock);
+  return s;
 }
 
 void deletePacket (struct PacketHolder *packet) {
@@ -279,6 +277,7 @@ void DONTCALLTHISaddPacket(uint32_t hash, char * data) {
   }
   strcpy(s->data, data); 
 }
+
 
 struct PacketHolder * DONTCALLTHISfindPacket (uint32_t hash) {
   struct PacketHolder *s;
