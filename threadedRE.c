@@ -42,9 +42,9 @@ struct PacketHolder{
 typedef struct {
   char buf[BUFSIZ];
   size_t len;
-  pthread_mutex_t mutex;
-  pthread_cond_t more;
-  pthread_cond_t less;
+  pthread_mutex_t *mutex;
+  pthread_cond_t *more;
+  pthread_cond_t *less;
 } buffer_t;
 
 
@@ -79,17 +79,24 @@ int main(int argc, char * argv[]) {
   DumpInformation(fp);
   fclose(fp);
 
-  buffer_t buffer = {
-    .len = 0,
-    .mutex = PTHREAD_MUTEX_INITIALIZER,
-    .more = PTHREAD_COND_INITIALIZER,
-    .less = PTHREAD_COND_INITIALIZER
-  };
+  buffer_t *buffer;
+  buffer = (buffer_t *)malloc(sizeof(buffer_t));
+  if (buffer == NULL) {
+    printf("error initializing buffer\n");
+    return 0;
+  }
+  buffer->len = 0;
+  buffer->mutex = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t));
+  pthread_mutex_init(buffer->mutex, NULL);
+  buffer->more = (pthread_cond_t *) malloc(sizeof(pthread_cond_t));
+  pthread_cond_init(buffer->more, NULL);
+  buffer->less = (pthread_cond_t *) malloc(sizeof(pthread_cond_t));
+  pthread_cond_init(buffer->less, NULL);
 
   pthread_t prod;
   pthread_t cons;
-  pthread_create(&prod, NULL, producer, (void*)&buffer);
-  pthread_create(&cons, NULL, consumer, (void*)&buffer);
+  pthread_create(&prod, NULL, producer, buffer);
+  pthread_create(&cons, NULL, consumer, buffer);
 
   pthread_join(prod, NULL);
   pthread_join(cons, NULL);
@@ -166,16 +173,16 @@ void parseHeader(FILE *fp) {
 void *producer(void *arg) {
   buffer_t *buffer = (buffer_t*) arg;
   while (1) {
-    pthread_mutex_lock(&buffer->mutex);
+    pthread_mutex_lock(buffer->mutex);
     if(buffer->len == BUFSIZ) {
-      pthread_cond_wait(&buffer->more, &buffer->mutex);
+      pthread_cond_wait(buffer->more, buffer->mutex);
     }
     int t = rand();
     printf("Produced: %d\n", t);
     buffer->buf[buffer->len] = t;
     ++buffer->len;
-    pthread_cond_signal(&buffer->less);
-    pthread_mutex_unlock(&buffer->mutex);
+    pthread_cond_signal(buffer->less);
+    pthread_mutex_unlock(buffer->mutex);
   }
   return NULL;
 }
@@ -183,14 +190,14 @@ void *producer(void *arg) {
 void *consumer(void *arg) {
   buffer_t *buffer = (buffer_t*) arg;
   while(1) {
-    pthread_mutex_lock(&buffer->mutex);
+    pthread_mutex_lock(buffer->mutex);
     while(buffer->len == 0) {
-      pthread_cond_wait(&buffer->less, &buffer->mutex);
+      pthread_cond_wait(buffer->less, buffer->mutex);
     }
     --buffer->len;
     printf("Consumed: %d\n", buffer->buf[buffer->len]);
-    pthread_cond_signal(&buffer->more);
-    pthread_mutex_unlock(&buffer->mutex);
+    pthread_cond_signal(buffer->more);
+    pthread_mutex_unlock(buffer->mutex);
   }
   return NULL;
 }
