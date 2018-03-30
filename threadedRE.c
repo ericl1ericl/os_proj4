@@ -256,7 +256,7 @@ void compHash(){
 }
 
 void chooseHashToEvict(uint32_t hash) {
-  int roll = rand() % 6 + 1;
+  int roll = rand() % 6;
   if (!packetsInTable) { // if this is the first entry, it is automatically the packet that will be evicted
     hashToEvict = hash;
   } else if (!roll) { // if roll == 0 (1/6 chance) update packet to evict
